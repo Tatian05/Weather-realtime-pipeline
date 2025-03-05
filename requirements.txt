@@ -1,0 +1,7 @@
+pandas
+requests
+confluent-kafka
+pyspark
+SQLAlchemy
+python-dotenv
+psycopg2-binary

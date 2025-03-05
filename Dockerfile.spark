@@ -1,0 +1,14 @@
+FROM bitnami/spark:latest
+
+USER root
+
+#Instalar wget y otras dependencias necesarias
+RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+
+#Descargar el JDBC driver de PostgreSQL
+RUN wget -P /opt/bitnami/spark/jars https://jdbc.postgresql.org/download/postgresql-42.2.24.jar
+
+#Instalar pip y las dependencias de Python
+RUN apt-get update && apt-get install -y python3-pip && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt /tmp/requirements.txt
+RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
