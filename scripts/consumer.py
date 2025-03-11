@@ -62,6 +62,7 @@ df_news = df_news.select("news") \
             col("news.published").alias("published")) \
         .withColumn("category", explode("category")) \
         .fillna({'image': "None"}) \
+        .dropDuplicates(['id', 'category']) \
         .drop("news")
 
 #CLEANED DATA KAFKA TOPIC
@@ -144,32 +145,28 @@ merge_query = """
     VALUES (source.id::UUID, source.title, source.description, source.url, source.author, source.image, source.language, source.category, source.published)
 """
 
-try:
-    conn = psycopg2.connect(
-        dbname = db_name,
-        host = db_host,
-        port = db_port,
-        user = db_user,
-        password = db_password
-    )
-    print("Connected to PostgreSQL")
-except Exception as e:
-    print(f"Error trying to connect to the database: {e}")
-
 #INSERT DATA TO POSTGRESQL TEMP TABLE
 def insert_to_postgres(df, batch_id):
     try:
-        with conn.cursor() as cursor:
-            cursor.execute(schema_query)
-            cursor.execute(temp_table_query)
-            cursor.execute(latest_table_query)
+        with psycopg2.connect(
+            dbname = db_name,
+            host = db_host,
+            port = db_port,
+            user = db_user,
+            password = db_password
+        ) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(schema_query)
+                cursor.execute(temp_table_query)
+                cursor.execute(latest_table_query)
 
-            conn.commit()
+                conn.commit()
         
-        df.write.jdbc(url=postgres_url, table="news.temp", mode="overwrite", properties=db_properties)
+        df.write.jdbc(url=postgres_url, table="news.temp", mode="append", properties=db_properties)
 
         with conn.cursor() as cursor:
             cursor.execute(merge_query)
+            cursor.execute("TRUNCATE TABLE news.temp")
             conn.commit()
 
         print("Merge completed successfully")
