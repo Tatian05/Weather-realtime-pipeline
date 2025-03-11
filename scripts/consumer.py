@@ -61,6 +61,7 @@ df_news = df_news.select("news") \
             col("news.category").alias("category"),
             col("news.published").alias("published")) \
         .withColumn("category", explode("category")) \
+        .fillna({'image': "None"}) \
         .drop("news")
 
 #CLEANED DATA KAFKA TOPIC
@@ -143,14 +144,17 @@ merge_query = """
     VALUES (source.id::UUID, source.title, source.description, source.url, source.author, source.image, source.language, source.category, source.published)
 """
 
-conn = psycopg2.connect(
-    dbname = db_name,
-    host = db_host,
-    port = db_port,
-    user = db_user,
-    password = db_password
-)
-print("Connected to PostgreSQL")
+try:
+    conn = psycopg2.connect(
+        dbname = db_name,
+        host = db_host,
+        port = db_port,
+        user = db_user,
+        password = db_password
+    )
+    print("Connected to PostgreSQL")
+except Exception as e:
+    print(f"Error trying to connect to the database: {e}")
 
 #INSERT DATA TO POSTGRESQL TEMP TABLE
 def insert_to_postgres(df, batch_id):

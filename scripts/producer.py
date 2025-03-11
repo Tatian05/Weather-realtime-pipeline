@@ -5,9 +5,7 @@ import time
 import pandas as pd
 
 from dotenv import load_dotenv
-from pprint import pprint
 from confluent_kafka import Producer
-from random import random
 from functions import delivery_callback
 
 load_dotenv()
@@ -27,11 +25,8 @@ producer = Producer(conf)
 
 try:
     while True:
-        #res = requests.get(url, params=params)
-        #latest_news = res.json()
-        with open("/data/news.json", "r") as f:
-            latest_news = json.load(f)
-
+        res = requests.get(url, params=params)
+        latest_news = res.json()
 
         producer.produce(
             "raw-latest-news",
