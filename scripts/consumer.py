@@ -100,9 +100,9 @@ schema_query = "CREATE SCHEMA IF NOT EXISTS news"
 
 temp_table_query = """
     CREATE TABLE IF NOT EXISTS news.temp (
-        id UUID,
+        id VARCHAR(255),
         title VARCHAR(255),
-        description VARCHAR(500),
+        description VARCHAR(1000),
         url VARCHAR(255),
         author VARCHAR(100),
         image VARCHAR(500),
@@ -114,9 +114,9 @@ temp_table_query = """
 
 latest_table_query = """
     CREATE TABLE IF NOT EXISTS news.latest (
-        id UUID,
+        id VARCHAR(255),
         title VARCHAR(255),
-        description VARCHAR(500),
+        description VARCHAR(1000),
         url VARCHAR(255),
         author VARCHAR(100),
         image VARCHAR(500),
@@ -129,7 +129,7 @@ latest_table_query = """
 merge_query = """
     MERGE INTO news.latest AS target
     USING news.temp AS source
-    ON target.id = source.id::UUID AND target.category = source.category
+    ON target.id = source.id AND target.category = source.category
     WHEN MATCHED THEN 
         UPDATE SET
             title = source.title,
@@ -142,7 +142,7 @@ merge_query = """
             published = source.published
     WHEN NOT MATCHED THEN
     INSERT (id, title, description, url, author, image, language, category, published)
-    VALUES (source.id::UUID, source.title, source.description, source.url, source.author, source.image, source.language, source.category, source.published)
+    VALUES (source.id, source.title, source.description, source.url, source.author, source.image, source.language, source.category, source.published)
 """
 
 #INSERT DATA TO POSTGRESQL TEMP TABLE
