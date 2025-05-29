@@ -34,7 +34,8 @@ services:
       - "7077:7077"
       - "8080:8080"
     volumes:
-      - ./scripts:/app
+      - ./scripts:/scripts
+      - ./:/app
       - ~/Desktop:/data
       - ./checkpoints:/opt/spark-checkpoints
     restart: always

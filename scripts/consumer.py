@@ -1,27 +1,33 @@
 import os
 import psycopg2
+import json
 
 from dotenv import load_dotenv
+from pyspark import SparkConf
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
-from pyspark.sql.types import StructType, StructField, StringType, ArrayType, TimestampType
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType, TimestampType, DoubleType, IntegerType
 
+with open("/app/spark_config.json", 'r') as f:
+    spark_config = json.load(f)
+
+conf = SparkConf()
+conf.setAll(spark_config.items())
 
 #SPARK SESSION
 spark = SparkSession \
         .builder \
-        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0") \
-        .appName("Latest-news-streaming") \
+        .config(conf=conf) \
         .getOrCreate()
 
 #KAFKA BROKER
 bootstrap_server = "kafka:9092"
 
 #RAW KAFKA TOPIC
-topic = "raw-latest-news"
+topic = "raw_weather_data"
 
 #TRANSFORM DATA
-df_news = spark \
+df = spark \
         .readStream \
         .format("kafka") \
         .option("kafka.bootstrap.servers", bootstrap_server) \
@@ -30,44 +36,83 @@ df_news = spark \
         .load()
 
 schema = StructType([
-    StructField("status", StringType(), True),
-    StructField("news", ArrayType(StructType([
-        StructField("id", StringType(), True),
-        StructField("title", StringType(), True),
-        StructField("description", StringType(), True),
-        StructField("url", StringType(), True),
-        StructField("author", StringType(), True),
-        StructField("image", StringType(), True),
-        StructField("language", StringType(), True),
-        StructField("category", ArrayType(StringType()), True),
-        StructField("published", TimestampType(), True)
-        ])), True),
-    StructField("page", StringType(), True)
-])
+    StructField('coord', StructType([
+        StructField('lon',DoubleType(),True),
+        StructField('lat',DoubleType(),True)]), True),
+    StructField('weather', ArrayType(
+        StructType([
+            StructField('id',IntegerType(),True),  
+            StructField('main',StringType(),True),  
+            StructField('description',StringType(),True),  
+            StructField('icon',StringType(),True)])), True),  
+    StructField('base',StringType(),True),  
+    StructField('main', StructType([
+        StructField('temp',DoubleType(),True),  
+        StructField('feels_like',DoubleType(),True),  
+        StructField('temp_min',DoubleType(),True),  
+        StructField('temp_max',DoubleType(),True),  
+        StructField('pressure',IntegerType(),True),  
+        StructField('humidity',IntegerType(),True),  
+        StructField('sea_level',IntegerType(),True),  
+        StructField('grnd_level',IntegerType(),True)]), True),  
+    StructField('visibility',IntegerType(),True),  
+    StructField('wind',StructType([
+        StructField('speed',DoubleType(),True),  
+        StructField('deg',IntegerType(),True), 
+        StructField('gust',DoubleType(),True)]), True), 
+    StructField('rain',StructType([
+        StructField('1h',DoubleType(),True)]), True),
+    StructField('snow',StructType([
+        StructField('1h',DoubleType(),True)]), True),
+    StructField('clouds',StructType([
+        StructField('all',IntegerType(),True)]), True),  
+    StructField('dt',TimestampType(),True),  
+    StructField('sys',StructType([
+        StructField('type',IntegerType(),True),  
+        StructField('id',IntegerType(),True),  
+        StructField('country',StringType(),True),  
+        StructField('sunrise',TimestampType(),True),  
+        StructField('sunset',TimestampType(),True)]),True),  
+    StructField('timezone',IntegerType(),True),  
+    StructField('id',IntegerType(),True),  
+    StructField('name',StringType(),True),  
+    StructField('cod',IntegerType(),True)])
 
-df_news = df_news.selectExpr("CAST(value AS STRING)").select("value")
-df_news = df_news.withColumn("data", from_json(col("value"), schema)).select("data.*")
+df = df.selectExpr("CAST(value AS STRING)").select("value")
+df = df.withColumn("data", from_json(col("value"), schema)).select("data.*")
 
-df_news = df_news.select("news") \
-        .withColumn("news", explode("news")) \
-        .select("*", 
-            col("news.id").alias("id"),
-            col("news.title").alias("title"),
-            col("news.description").alias("description"),
-            col("news.url").alias("url"),
-            col("news.author").alias("author"),
-            col("news.image").alias("image"),
-            col("news.language").alias("language"),
-            col("news.category").alias("category"),
-            col("news.published").alias("published")) \
-        .withColumn("category", explode("category")) \
-        .fillna({'image': "None"}) \
-        .dropDuplicates(['id', 'category']) \
-        .drop("news")
+df_weather = df.select(
+    col("id").alias("city_id"),
+    col("coord.lat").alias("latitude"),
+    col("coord.lon").alias("longitude"),
+    col("name").alias("city_name"),
+    col("sys.country").alias("country_code"),
+    col("dt").alias("datetime"),
+    col("timezone").alias("timezone"),
+    col("weather").getItem(0).getField("main").alias("weather_main"),
+    col("weather").getItem(0).getField("description").alias("weather_description"),
+    coalesce(col("main.temp"), lit(0)).alias("temperature"),
+    coalesce(col("main.feels_like"), lit(0)).alias("feels_like"),
+    coalesce(col("main.temp_min"), lit(0)).alias("temp_min"),
+    coalesce(col("main.temp_max"), lit(0)).alias("temp_max"),
+    coalesce(col("visibility")).alias("visibility"),
+    coalesce(col("main.pressure"), lit(0)).alias("pressure"),
+    coalesce(col("main.humidity"), lit(0)).alias("humidity"),
+    coalesce(col("main.sea_level"), lit(0)).alias("sea_level"),
+    coalesce(col("main.grnd_level"), lit(0)).alias("grnd_level"),
+    coalesce(col("wind.speed"), lit(0.0)).alias("wind_speed"),
+    coalesce(col("wind.deg"), lit(0)).alias("wind_deg"),
+    coalesce(col("wind.gust"), lit(0)).alias("wind_gust"),
+    coalesce(col("rain.1h"), lit(0)).alias("rain_mm_h"),
+    coalesce(col("snow.1h"), lit(0)).alias("snow_mm_h"),
+    col("clouds.all").alias("cloudiness"),
+    col("sys.sunrise").alias("sunrise"),
+    col("sys.sunset").alias("sunset")
+)
 
 #CLEANED DATA KAFKA TOPIC
-df_kafka = df_news.selectExpr("CAST (id AS STRING) AS key", "to_json(struct(*)) AS value")
-cleaned_topic = "cleaned-latest-news"
+df_kafka = df_weather.selectExpr("CAST (city_id AS STRING) AS key", "to_json(struct(*)) AS value")
+cleaned_topic = "clean_weather_data"
 
 #SEND TO KAFKA
 kafka_query = df_kafka \
@@ -96,53 +141,39 @@ db_properties = {
 }
 
 #SQL TABLE
-schema_query = "CREATE SCHEMA IF NOT EXISTS news"
+QUERY_SCHEMA = "CREATE SCHEMA IF NOT EXISTS weather"
 
-temp_table_query = """
-    CREATE TABLE IF NOT EXISTS news.temp (
-        id VARCHAR(255),
-        title VARCHAR(255),
-        description VARCHAR(1000),
-        url VARCHAR(255),
-        author VARCHAR(100),
-        image VARCHAR(500),
-        language VARCHAR(50),
-        category VARCHAR(50),
-        published TIMESTAMP
-    );
-"""
-
-latest_table_query = """
-    CREATE TABLE IF NOT EXISTS news.latest (
-        id VARCHAR(255),
-        title VARCHAR(255),
-        description VARCHAR(1000),
-        url VARCHAR(255),
-        author VARCHAR(100),
-        image VARCHAR(500),
-        language VARCHAR(50),
-        category VARCHAR(50),
-        published TIMESTAMP
-    );
-"""
-
-merge_query = """
-    MERGE INTO news.latest AS target
-    USING news.temp AS source
-    ON target.id = source.id AND target.category = source.category
-    WHEN MATCHED THEN 
-        UPDATE SET
-            title = source.title,
-            description = source.description,
-            url = source.url,
-            author = source.author,
-            image = source.image,
-            language = source.language,
-            category = source.category,
-            published = source.published
-    WHEN NOT MATCHED THEN
-    INSERT (id, title, description, url, author, image, language, category, published)
-    VALUES (source.id, source.title, source.description, source.url, source.author, source.image, source.language, source.category, source.published)
+QUERY_TABLE = """
+    CREATE TABLE IF NOT EXISTS weather.weather_data(
+               id SERIAL PRIMARY KEY,
+               city_id INTEGER,
+               city_name VARCHAR(100),
+               country_code CHAR(2),
+               longitude FLOAT,
+               latitude FLOAT,
+               datetime TIMESTAMP,
+               timezone INTEGER,
+               weather_main VARCHAR(50),
+               weather_description VARCHAR(255),
+               temperature FLOAT DEFAULT 0.0,
+               feels_like FLOAT DEFAULT 0.0,
+               temp_min FLOAT DEFAULT 0.0,
+               temp_max FLOAT DEFAULT 0.0,
+               visibility INTEGER DEFAULT 0,
+               pressure INTEGER DEFAULT 0,
+               humidity INTEGER DEFAULT 0,
+               sea_level INTEGER DEFAULT 0,
+               grnd_level INTEGER DEFAULT 0,
+               wind_speed FLOAT DEFAULT 0.0,
+               wind_deg INTEGER DEFAULT 0,
+               wind_gust FLOAT DEFAULT 0.0,
+               rain_mm_h FLOAT DEFAULT 0.0,
+               snow_mm_h FLOAT DEFAULT 0.0,
+               cloudiness INTEGER DEFAULT 0,
+               sunrise TIMESTAMP,
+               sunset TIMESTAMP,
+               ingestion_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
 """
 
 #INSERT DATA TO POSTGRESQL TEMP TABLE
@@ -156,28 +187,25 @@ def insert_to_postgres(df, batch_id):
             password = db_password
         ) as conn:
             with conn.cursor() as cursor:
-                cursor.execute(schema_query)
-                cursor.execute(temp_table_query)
-                cursor.execute(latest_table_query)
+                cursor.execute(QUERY_SCHEMA)
+                cursor.execute(QUERY_TABLE)
 
                 conn.commit()
         
-        df.write.jdbc(url=postgres_url, table="news.temp", mode="append", properties=db_properties)
+        df.write.jdbc(url=postgres_url, table="weather.weather_data", mode="append", properties=db_properties)
 
-        with conn.cursor() as cursor:
-            cursor.execute(merge_query)
-            cursor.execute("TRUNCATE TABLE news.temp")
-            conn.commit()
-
-        print("Merge completed successfully")
+        print("Insert completed successfully")
     except Exception as e:
         print(f"Error during PostgreSQL operation: {e}")
 
 
-sql_query = df_news.writeStream \
+sql_query = df_weather.writeStream \
         .foreachBatch(insert_to_postgres) \
         .option("checkpointLocation", "/opt/spark-checkpoints/postgres") \
         .start()
 
 kafka_query.awaitTermination()
 sql_query.awaitTermination()
+
+
+#docker exec -it spark-master python /scripts/consumer.py

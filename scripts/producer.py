@@ -10,28 +10,47 @@ from functions import delivery_callback
 
 load_dotenv()
 
-api_key = os.environ.get("API-KEY")
-url = 'https://api.currentsapi.services/v1/latest-news'
-
-params = {
-    "apiKey": api_key
-}
-
 #KAFKA PRODUCER
 conf={
     "bootstrap.servers":"kafka:9092"
 }
 producer = Producer(conf)
 
+
+CITY = "Buenos Aires"
+API_KEY = os.getenv("API_KEY")
+
+GEOCODING_URL = f"https://api.openweathermap.org/geo/1.0/direct?q={CITY}&appid={API_KEY}"
+
+def get_coords():
+     try:
+          res = requests.get(GEOCODING_URL)
+          json_data = res.json()
+
+          if isinstance(json_data, list) and len(json_data) > 0:
+               data = json_data[0]
+               lat = data.get("lat")
+               lon = data.get("lon")
+               return lat, lon
+          else:
+               raise ValueError("Respuesta inesperada de la API: {}".format(json_data))
+     except requests.RequestException as e:
+          print(f"Error in API request: {e}")
+
+
+lat, lon = get_coords()
+WEATHER_URL = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
+
+
 try:
     while True:
         try:
-            res = requests.get(url, params=params)
+            res = requests.get(WEATHER_URL)
             res.raise_for_status()
             latest_news = res.json()
 
             producer.produce(
-                "raw-latest-news",
+                "raw_weather_data",
                 json.dumps(latest_news).encode("utf-8"),
                 callback=delivery_callback
             )
@@ -46,3 +65,5 @@ except KeyboardInterrupt:
     print("Closing producer.")
 finally:
     producer.flush()
+
+#docker exec -it spark-master python /app/producer.py

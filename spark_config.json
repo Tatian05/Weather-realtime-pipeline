@@ -1,0 +1,5 @@
+{
+    "spark.app.name":"weather_data_streaming",
+    "spark.master":"local[*]",
+    "spark.jars.packages":"org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0"
+}
