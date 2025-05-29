@@ -2,7 +2,6 @@ import requests
 import os
 import json
 import time
-import pandas as pd
 
 from dotenv import load_dotenv
 from confluent_kafka import Producer
@@ -65,5 +64,3 @@ except KeyboardInterrupt:
     print("Closing producer.")
 finally:
     producer.flush()
-
-#docker exec -it spark-master python /app/producer.py
